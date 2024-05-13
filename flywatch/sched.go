@@ -52,6 +52,8 @@ func (f *Flywatch) schedule() http.HandlerFunc {
 				return err
 			}
 
+			b.CreateBucketIfNotExists([]byte("machines"))
+
 			// Create a machine configuration
 			mc := fly.MachineConfig{
 				Env:      map[string]string{},
