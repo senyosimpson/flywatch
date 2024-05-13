@@ -1,0 +1,16 @@
+app = "fly-scheduler"
+
+[[services]]
+protocol = "tcp"
+internal_port = 8080
+auto_stop_machines = false
+auto_start_machines = false
+
+[[services.ports]]
+handlers = ["http"]
+port = 80
+force_https = false
+
+[[services.ports]]
+handlers = ["http"]
+port = 443
