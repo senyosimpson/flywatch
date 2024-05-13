@@ -13,9 +13,10 @@ import (
 )
 
 type Controller struct {
-	Db     *bolt.DB
-	Logger *slog.Logger
-	Client *http.Client
+	Db       *bolt.DB
+	Logger   *slog.Logger
+	Client   *http.Client
+	APIToken string
 }
 
 type apiError struct {
@@ -23,6 +24,13 @@ type apiError struct {
 }
 
 func (c *Controller) Run() {
+	c.Logger.Info("starting controller")
+	for {
+		c.sync()
+	}
+}
+
+func (c *Controller) sync() {
 	// TODO: Don't do all of this in a transaction?
 	c.Db.View(func(tx *bolt.Tx) error {
 		// Iterate over all buckets. The top le
@@ -60,21 +68,23 @@ func (c *Controller) Run() {
 					case len(existingMachines) > replica.Count:
 						// delete machines
 					case existingMachines == nil:
+						c.Logger.Info(fmt.Sprintf("Creating %d machines in region %s", replica.Count, replica.Region))
 						// we don't know about this region, create all machines
 						machines := map[string]machine{}
 						for i := 0; i < replica.Count; i++ {
-							m, err := c.createMachine(md.App, createMachineRequest{
-								Region: replica.Region,
-								Config: &md.MachineConfig,
-							})
-							if err != nil {
-								c.Logger.Error("failed to create machine", "error", err)
-							}
-							machines[m.ID] = *m
+							// m, err := c.createMachine(md.App, createMachineRequest{
+							// 	Region: replica.Region,
+							// 	Config: &md.MachineConfig,
+							// })
+							// if err != nil {
+							// 	c.Logger.Error("failed to create machine", "error", err)
+							// }
+							m := machine{}
+							machines[m.ID] = m
 						}
 						// Store information in the bucket.
-						v, _ := json.Marshal(machines)
-						machinesBucket.Put([]byte(replica.Region), v)
+						// v, _ := json.Marshal(machines)
+						// machinesBucket.Put([]byte(replica.Region), v)
 					}
 				}
 			}
@@ -93,6 +103,8 @@ func (c *Controller) createMachine(app string, request createMachineRequest) (*m
 	url := fmt.Sprintf("%s/v1/apps/%s/machines", MachinesURL, app)
 
 	req, _ := http.NewRequest(http.MethodPost, url, &b)
+	req.Header.Set("authorization", c.APIToken)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
