@@ -26,17 +26,22 @@ func main() {
 	}
 
 	httpClient := cleanhttp.DefaultClient()
+
+	notify := make(chan struct{}, 1)
+
 	controller := flywatch.Controller{
 		Db:       db,
 		Logger:   logger,
 		Client:   httpClient,
 		APIToken: flyAPIToken,
+		Notify:   notify,
 	}
 	go controller.Run()
 
 	fw := flywatch.Flywatch{
 		Logger: logger,
 		Db:     db,
+		Notify: notify,
 	}
 	fw.Run()
 }

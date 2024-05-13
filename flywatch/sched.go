@@ -18,6 +18,7 @@ const (
 type Flywatch struct {
 	Logger *slog.Logger
 	Db     *bolt.DB
+	Notify chan<- struct{}
 }
 
 func (f *Flywatch) Run() {
@@ -139,7 +140,11 @@ func (f *Flywatch) schedule() http.HandlerFunc {
 
 		if err != nil {
 			f.Logger.Error("error storing deployment", "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
+
+		f.Notify <- struct{}{}
 	}
 }
 

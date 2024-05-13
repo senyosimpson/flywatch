@@ -12,11 +12,17 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
+const (
+	updateInterval = 5 * time.Minute
+)
+
 type Controller struct {
-	Db       *bolt.DB
-	Logger   *slog.Logger
-	Client   *http.Client
-	APIToken string
+	Db           *bolt.DB
+	Logger       *slog.Logger
+	Client       *http.Client
+	APIToken     string
+	Notify       <-chan struct{}
+	ResyncPeriod time.Duration
 }
 
 type apiError struct {
@@ -25,7 +31,19 @@ type apiError struct {
 
 func (c *Controller) Run() {
 	c.Logger.Info("starting controller")
+
+	resync := time.NewTimer(c.ResyncPeriod)
+	defer resync.Stop()
+
 	for {
+		// Either we update every 5 minutes or when signaled from the API server
+		select {
+		case <-resync.C:
+			c.Logger.Debug("resync period elapsed")
+		case <-c.Notify:
+			c.Logger.Debug("notified to resync")
+		}
+
 		c.sync()
 	}
 }
