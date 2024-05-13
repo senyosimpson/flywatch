@@ -23,13 +23,13 @@ type Flywatch struct {
 func (f *Flywatch) Run() {
 	// Setup API server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/schedule", f.scheduleHandler())
+	mux.HandleFunc("/schedule", f.schedule())
 	f.Logger.Info("starting Flywatch API server")
 	err := http.ListenAndServe(":8080", mux)
 	f.Logger.Error("server error", "error", err)
 }
 
-func (f *Flywatch) scheduleHandler() http.HandlerFunc {
+func (f *Flywatch) schedule() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// TODO: Ensure it's a post method
 
@@ -45,19 +45,16 @@ func (f *Flywatch) scheduleHandler() http.HandlerFunc {
 
 		// We have a valid configuration, we'll store in the DB in the way that makes
 		// sense for the machine controller
-		f.Db.Update(func(tx *bolt.Tx) error {
+		err = f.Db.Update(func(tx *bolt.Tx) error {
 			b, err := tx.CreateBucketIfNotExists([]byte(config.App))
 			if err != nil {
 				return err
 			}
 
-			b.CreateBucketIfNotExists([]byte("machines"))
-
 			// Create a machine configuration
 			mc := fly.MachineConfig{
 				Env:      map[string]string{},
 				Metadata: map[string]string{},
-				Mounts:   []fly.MachineMount{},
 			}
 
 			// Image
@@ -118,7 +115,7 @@ func (f *Flywatch) scheduleHandler() http.HandlerFunc {
 			}
 			mc.Restart = &restart
 
-			m := MachineDeployment{
+			md := MachineDeployment{
 				App:                config.App,
 				MachineConfig:      mc,
 				Replicas:           config.Replicas,
@@ -127,17 +124,22 @@ func (f *Flywatch) scheduleHandler() http.HandlerFunc {
 
 			if config.Deploy != nil {
 				if s := config.Deploy.Strategy; s != "" {
-					m.DeploymentStrategy = s
+					md.DeploymentStrategy = s
 				}
 			}
 
-			value, err := json.Marshal(m)
+			value, err := json.Marshal(md)
 			if err != nil {
+				return err
 			}
 			b.Put([]byte(config.Name), value)
 
 			return nil
 		})
+
+		if err != nil {
+			f.Logger.Error("error storing deployment", "error", err)
+		}
 	}
 }
 

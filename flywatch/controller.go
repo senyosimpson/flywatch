@@ -37,14 +37,20 @@ func (c *Controller) sync() {
 		cursor := tx.Cursor()
 		for bucket, _ := cursor.First(); bucket != nil; bucket, _ = cursor.Next() {
 			appBucket := tx.Bucket(bucket)
-
 			machinesBucket := appBucket.Bucket([]byte("machines"))
 
 			cursor := appBucket.Cursor()
 			for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
+				// Ignore buckets, they have nil values
+				if v == nil {
+					continue
+				}
+
+				c.Logger.Debug("handling deployment", "deployment", string(k))
 				var md MachineDeployment
 				err := json.Unmarshal(v, &md)
 				if err != nil {
+					c.Logger.Error("error unmarshaling machine deployment", "deployment", string(k), "error", err)
 				}
 
 				// TODO: Handle the case where we've updated our configuration, we need to update
@@ -54,22 +60,14 @@ func (c *Controller) sync() {
 				// We go through each replica, compare to what we already know, then create or delete a machines if needed
 				for _, replica := range md.Replicas {
 					existingMachines := map[string]machine{}
-					data := machinesBucket.Get([]byte(replica.Region))
-					err := json.Unmarshal(data, &existingMachines)
+					em := machinesBucket.Get([]byte(replica.Region))
+					json.Unmarshal(em, &existingMachines)
 
-					if err != nil {
-					}
 					switch {
-					case len(existingMachines) == replica.Count:
-						// check if they're all still in good shape. If we have a failed machine, then
-						// we need to create a new one.
-					case len(existingMachines) < replica.Count:
-						// create machines
-					case len(existingMachines) > replica.Count:
-						// delete machines
-					case existingMachines == nil:
+					// we don't know about this region, create all machines. no need to worry
+					// about updates here
+					case em == nil:
 						c.Logger.Info(fmt.Sprintf("Creating %d machines in region %s", replica.Count, replica.Region))
-						// we don't know about this region, create all machines
 						machines := map[string]machine{}
 						for i := 0; i < replica.Count; i++ {
 							// m, err := c.createMachine(md.App, createMachineRequest{
@@ -85,6 +83,13 @@ func (c *Controller) sync() {
 						// Store information in the bucket.
 						// v, _ := json.Marshal(machines)
 						// machinesBucket.Put([]byte(replica.Region), v)
+					case len(existingMachines) == replica.Count:
+						// check if they're all still in good shape. If we have a failed machine, then
+						// we need to create a new one.
+					case len(existingMachines) < replica.Count:
+						// create machines
+					case len(existingMachines) > replica.Count:
+						// delete machines
 					}
 				}
 			}
